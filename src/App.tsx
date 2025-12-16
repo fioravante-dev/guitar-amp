@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Volume2, VolumeX, Power } from 'lucide-react';
 
 export default function App() {
@@ -11,22 +11,22 @@ export default function App() {
   const [reverbAmount, setReverbAmount] = useState(20);
   const [delayAmount, setDelayAmount] = useState(0);
   const [inputLevel, setInputLevel] = useState(0);
-  const [devices, setDevices] = useState([]);
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   
-  const audioContextRef = useRef(null);
-  const sourceRef = useRef(null);
-  const analyserRef = useRef(null);
-  const gainNodeRef = useRef(null);
-  const distortionRef = useRef(null);
-  const filterRef = useRef(null);
-  const volumeNodeRef = useRef(null);
-  const convolverRef = useRef(null);
-  const delayNodeRef = useRef(null);
-  const delayGainRef = useRef(null);
-  const reverbGainRef = useRef(null);
-  const dryGainRef = useRef(null);
-  const streamRef = useRef(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const distortionRef = useRef<WaveShaperNode | null>(null);
+  const filterRef = useRef<BiquadFilterNode | null>(null);
+  const volumeNodeRef = useRef<GainNode | null>(null);
+  const convolverRef = useRef<ConvolverNode | null>(null);
+  const delayNodeRef = useRef<DelayNode | null>(null);
+  const delayGainRef = useRef<GainNode | null>(null);
+  const reverbGainRef = useRef<GainNode | null>(null);
+  const dryGainRef = useRef<GainNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const amps = {
     clean: { name: 'Clean', color: 'bg-blue-500' },
@@ -37,7 +37,7 @@ export default function App() {
     metal: { name: 'Metal', color: 'bg-gray-800' }
   };
 
-  const makeDistortionCurve = (amount) => {
+  const makeDistortionCurve = (amount: number) => {
     const samples = 44100;
     const curve = new Float32Array(samples);
     const deg = Math.PI / 180;
@@ -53,7 +53,7 @@ export default function App() {
     return curve;
   };
 
-  const createImpulseResponse = (context, duration, decay) => {
+  const createImpulseResponse = (context: AudioContext, duration: number, decay: number) => {
     const length = context.sampleRate * duration;
     const impulse = context.createBuffer(2, length, context.sampleRate);
     
@@ -99,7 +99,7 @@ export default function App() {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
       streamRef.current = stream;
-      const context = new (window.AudioContext || window.webkitAudioContext)();
+      const context = new (window.AudioContext || (window as any).webkitAudioContext)();
       audioContextRef.current = context;
 
       if (context.state === 'suspended') {
@@ -183,7 +183,8 @@ export default function App() {
 
       updateAmpSettings();
       setIsActive(true);
-    } catch (err) {
+    } catch (error) {
+      const err = error as any;
       console.error('Erro detalhado:', err);
       
       let errorMessage = 'Erro ao acessar o áudio. ';
@@ -204,7 +205,7 @@ export default function App() {
 
   const stopAudio = () => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop());
     }
     if (audioContextRef.current) {
       audioContextRef.current.close();
@@ -224,7 +225,7 @@ export default function App() {
       metal: { gain: 15, distortion: 150, cutoff: 4500 }
     };
 
-    const settings = ampSettings[selectedAmp];
+    const settings = ampSettings[selectedAmp as keyof typeof ampSettings];
     const gainMultiplier = gain / 30;
 
     if (gainNodeRef.current) {
@@ -271,233 +272,218 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!isActive || !analyserRef.current) return;
-
-    const analyser = analyserRef.current;
-    const bufferLength = analyser.fftSize;
-    const dataArray = new Uint8Array(bufferLength);
-
-    const updateLevel = () => {
-      if (!analyser) return;
-      analyser.getByteTimeDomainData(dataArray);
-      const rms = Math.sqrt(dataArray.reduce((sum, val) => sum + (val - 128) * (val - 128), 0) / bufferLength);
-      setInputLevel(Math.round(rms * 100));
-      console.log('RMS:', rms, 'Level:', Math.round(rms * 100));
-      requestAnimationFrame(updateLevel);
+    const updateInputLevel = () => {
+      if (analyserRef.current) {
+        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getByteTimeDomainData(dataArray);
+        
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const sample = (dataArray[i] - 128) / 128;
+          sum += sample * sample;
+        }
+        const rms = Math.sqrt(sum / dataArray.length);
+        setInputLevel(rms * 100);
+      }
+      
+      if (isActive) {
+        requestAnimationFrame(updateInputLevel);
+      }
     };
-
-    updateLevel();
+    
+    if (isActive) {
+      updateInputLevel();
+    }
   }, [isActive]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black p-8">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white p-4">
       <div className="max-w-4xl mx-auto">
-        <div className="bg-gradient-to-b from-amber-900 to-amber-950 rounded-3xl shadow-2xl p-8 border-4 border-amber-700">
-          
-          {/* Header */}
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-amber-200 mb-2" style={{ fontFamily: 'Impact, sans-serif' }}>
-              GUITAR AMP
-            </h1>
-            <p className="text-amber-400 text-sm">Simulador de Amplificador Virtual</p>
-          </div>
+        <header className="text-center mb-8">
+          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+            Guitar Amp Simulator
+          </h1>
+          <p className="text-gray-400">Simulador de amplificador de guitarra virtual</p>
+        </header>
 
-          {/* Power Button */}
-          <div className="flex justify-center mb-8">
-            <button
-              onClick={isActive ? stopAudio : startAudio}
-              className={`relative group ${isActive ? 'bg-green-500' : 'bg-red-600'} rounded-full p-6 shadow-lg transition-all duration-300 hover:scale-110`}
-            >
-              <Power className="w-8 h-8 text-white" />
-              {isActive && (
-                <div className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-75"></div>
-              )}
-            </button>
-            <span className="ml-4 self-center text-amber-200 font-semibold">
-              {isActive ? 'LIGADO' : 'DESLIGADO'}
-            </span>
-            {isActive && (
-              <div className="ml-4 self-center">
-                <div className="text-amber-200 text-sm">NÍVEL DE ENTRADA</div>
-                <div className="w-32 bg-gray-700 rounded-full h-2 mt-1">
-                  <div 
-                    className="bg-green-500 h-2 rounded-full transition-all duration-100"
-                    style={{ width: `${Math.min(inputLevel * 2, 100)}%` }}
-                  ></div>
-                </div>
-                <div className="text-amber-300 text-xs mt-1 font-mono">{inputLevel}</div>
-              </div>
-            )}
-            <div className="ml-4 self-center">
-              <label className="block text-amber-200 text-sm mb-1">ENTRADA DE ÁUDIO</label>
-              <select
-                value={selectedDeviceId}
-                onChange={(e) => setSelectedDeviceId(e.target.value)}
-                disabled={isActive}
-                className="bg-gray-700 text-amber-200 rounded px-2 py-1 text-sm disabled:opacity-50"
-              >
-                {devices.map(device => (
-                  <option key={device.deviceId} value={device.deviceId}>
-                    {device.label || `Microfone ${device.deviceId.slice(0, 8)}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Amp Selection */}
-          <div className="mb-8">
-            <label className="block text-amber-200 font-bold mb-3 text-center text-lg">
-              CANAL
-            </label>
-            <div className="grid grid-cols-3 gap-3">
-              {Object.entries(amps).map(([key, amp]) => (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Controles principais */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Power e dispositivos */}
+            <div className="bg-gray-800 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
                 <button
-                  key={key}
-                  onClick={() => setSelectedAmp(key)}
-                  disabled={!isActive}
-                  className={`py-3 px-4 rounded-lg font-bold transition-all ${
-                    selectedAmp === key
-                      ? `${amp.color} text-white shadow-lg scale-105`
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  onClick={isActive ? stopAudio : startAudio}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all ${
+                    isActive
+                      ? 'bg-red-600 hover:bg-red-700 text-white'
+                      : 'bg-green-600 hover:bg-green-700 text-white'
+                  }`}
                 >
-                  {amp.name}
+                  <Power size={20} />
+                  {isActive ? 'DESLIGAR' : 'LIGAR'}
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Controls */}
-          <div className="grid grid-cols-2 gap-6 mb-6">
-            {/* Gain */}
-            <div className="bg-black bg-opacity-30 p-4 rounded-lg">
-              <label className="block text-amber-200 font-bold mb-2">
-                GAIN
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={gain}
-                onChange={(e) => setGain(Number(e.target.value))}
-                disabled={!isActive}
-                className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-orange-500"
-              />
-              <div className="text-amber-300 text-center mt-1 font-mono">
-                {gain}
-              </div>
-            </div>
-
-            {/* Tone */}
-            <div className="bg-black bg-opacity-30 p-4 rounded-lg">
-              <label className="block text-amber-200 font-bold mb-2">
-                TONE
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={tone}
-                onChange={(e) => setTone(Number(e.target.value))}
-                disabled={!isActive}
-                className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-yellow-500"
-              />
-              <div className="text-amber-300 text-center mt-1 font-mono">
-                {tone}
-              </div>
-            </div>
-
-            {/* Volume */}
-            <div className="bg-black bg-opacity-30 p-4 rounded-lg">
-              <label className="block text-amber-200 font-bold mb-2 flex items-center justify-between">
-                <span>VOLUME</span>
+                
                 <button
                   onClick={() => setIsMuted(!isMuted)}
-                  disabled={!isActive}
-                  className="text-amber-400 hover:text-amber-200 disabled:opacity-50"
+                  className={`p-3 rounded-lg transition-all ${
+                    isMuted ? 'bg-red-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                  }`}
                 >
-                  {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                  {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
                 </button>
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={volume}
-                onChange={(e) => setVolume(Number(e.target.value))}
-                disabled={!isActive}
-                className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
-              />
-              <div className="text-amber-300 text-center mt-1 font-mono">
-                {volume}
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2">Dispositivo de Áudio</label>
+                <select
+                  value={selectedDeviceId}
+                  onChange={(e) => setSelectedDeviceId(e.target.value)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  disabled={isActive}
+                >
+                  {devices.map((device) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label || `Microfone ${device.deviceId.slice(0, 8)}`}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
-            {/* Reverb */}
-            <div className="bg-black bg-opacity-30 p-4 rounded-lg">
-              <label className="block text-amber-200 font-bold mb-2">
-                REVERB
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={reverbAmount}
-                onChange={(e) => setReverbAmount(Number(e.target.value))}
-                disabled={!isActive}
-                className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
-              />
-              <div className="text-amber-300 text-center mt-1 font-mono">
-                {reverbAmount}
+            {/* Seletor de amplificador */}
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h3 className="text-lg font-semibold mb-4">Tipo de Amplificador</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {Object.entries(amps).map(([key, amp]) => (
+                  <button
+                    key={key}
+                    onClick={() => setSelectedAmp(key)}
+                    className={`p-3 rounded-lg font-medium transition-all ${
+                      selectedAmp === key
+                        ? `${amp.color} text-white shadow-lg`
+                        : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                    }`}
+                  >
+                    {amp.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Controles de som */}
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h3 className="text-lg font-semibold mb-4">Controles</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Gain: {gain}</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={gain}
+                    onChange={(e) => setGain(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">Tone: {tone}</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={tone}
+                    onChange={(e) => setTone(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">Volume: {volume}</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={volume}
+                    onChange={(e) => setVolume(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">Reverb: {reverbAmount}</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={reverbAmount}
+                    onChange={(e) => setReverbAmount(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium mb-2">Delay: {delayAmount}</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={delayAmount}
+                    onChange={(e) => setDelayAmount(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Delay */}
-          <div className="bg-black bg-opacity-30 p-4 rounded-lg">
-            <label className="block text-amber-200 font-bold mb-2">
-              DELAY
-            </label>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={delayAmount}
-              onChange={(e) => setDelayAmount(Number(e.target.value))}
-              disabled={!isActive}
-              className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-green-500"
-            />
-            <div className="text-amber-300 text-center mt-1 font-mono">
-              {delayAmount}
+          {/* Medidor de nível */}
+          <div className="space-y-6">
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h3 className="text-lg font-semibold mb-4">Nível de Entrada</h3>
+              <div className="relative h-64 bg-gray-700 rounded-lg overflow-hidden">
+                <div
+                  className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-green-500 via-yellow-500 to-red-500 transition-all duration-100"
+                  style={{ height: `${Math.min(inputLevel * 2, 100)}%` }}
+                />
+                <div className="absolute inset-0 flex items-end justify-center pb-2">
+                  <span className="text-xs font-mono text-white bg-black bg-opacity-50 px-2 py-1 rounded">
+                    {Math.round(inputLevel)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h3 className="text-lg font-semibold mb-4">Status</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Amplificador:</span>
+                  <span className={`font-medium ${isActive ? 'text-green-400' : 'text-red-400'}`}>
+                    {isActive ? 'LIGADO' : 'DESLIGADO'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Tipo:</span>
+                  <span className="font-medium text-blue-400">
+                    {amps[selectedAmp as keyof typeof amps].name}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Áudio:</span>
+                  <span className={`font-medium ${isMuted ? 'text-red-400' : 'text-green-400'}`}>
+                    {isMuted ? 'MUDO' : 'ATIVO'}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
-
-          {/* Instructions */}
-          {!isActive && (
-            <div className="mt-6 p-4 bg-yellow-900 bg-opacity-30 rounded-lg border border-yellow-700">
-              <p className="text-amber-200 text-sm text-center font-bold mb-2">
-                📋 INSTRUÇÕES:
-              </p>
-              <ol className="text-amber-200 text-sm space-y-1 text-left list-decimal list-inside">
-                <li>Conecte sua guitarra/interface de áudio ao computador</li>
-                <li>Clique no botão POWER vermelho acima</li>
-                <li>IMPORTANTE: O navegador vai pedir permissão - clique em "Permitir"</li>
-                <li>Use fones de ouvido para evitar feedback</li>
-              </ol>
-              <p className="text-amber-300 text-xs mt-3 text-center">
-                💡 Se o pop-up não aparecer, clique no ícone de cadeado 🔒 na barra de endereço
-                e verifique as permissões de microfone
-              </p>
-            </div>
-          )}
         </div>
 
-        {/* Info */}
-        <div className="mt-6 text-center text-gray-400 text-sm">
-          <p>🎸 Conecte sua guitarra via interface de áudio ou cabo adaptador</p>
-          <p className="mt-2">Use fones de ouvido para evitar feedback</p>
-        </div>
+        <footer className="text-center mt-8 text-gray-500 text-sm">
+          <p>Conecte sua guitarra ao microfone do computador e ajuste os controles para obter o som desejado.</p>
+        </footer>
       </div>
     </div>
   );
