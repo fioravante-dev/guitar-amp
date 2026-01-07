@@ -30,6 +30,7 @@ export default function App() {
 
   const amps = {
     clean: { name: 'Clean', color: 'bg-blue-500' },
+    acoustic: { name: 'Acoustic', color: 'bg-green-500' },
     crunch: { name: 'Crunch', color: 'bg-orange-500' },
     overdrive: { name: 'Overdrive', color: 'bg-red-500' },
     distortion: { name: 'Distortion', color: 'bg-purple-500' },
@@ -92,14 +93,18 @@ export default function App() {
           echoCancellation: false,
           noiseSuppression: false,
           autoGainControl: false,
-          latency: 0
+          latency: 0,
+          channelCount: 1
         }
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
       streamRef.current = stream;
-      const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const context = new (window.AudioContext || (window as any).webkitAudioContext)({ 
+        latencyHint: 'interactive',
+        sampleRate: 44100 
+      });
       audioContextRef.current = context;
 
       if (context.state === 'suspended') {
@@ -111,7 +116,7 @@ export default function App() {
 
       // Analyser for input level
       const analyser = context.createAnalyser();
-      analyser.fftSize = 256;
+      analyser.fftSize = 128;
       analyserRef.current = analyser;
       source.connect(analyser);
 
@@ -218,6 +223,7 @@ export default function App() {
 
     const ampSettings = {
       clean: { gain: 0.5, distortion: 0, cutoff: 8000 },
+      acoustic: { gain: 0.3, distortion: 0, cutoff: 12000 },
       crunch: { gain: 2, distortion: 20, cutoff: 5000 },
       overdrive: { gain: 4, distortion: 40, cutoff: 4000 },
       distortion: { gain: 8, distortion: 80, cutoff: 3500 },
@@ -272,6 +278,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let intervalId: number | null = null;
+
     const updateInputLevel = () => {
       if (analyserRef.current) {
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
@@ -285,15 +293,18 @@ export default function App() {
         const rms = Math.sqrt(sum / dataArray.length);
         setInputLevel(rms * 100);
       }
-      
-      if (isActive) {
-        requestAnimationFrame(updateInputLevel);
-      }
     };
     
     if (isActive) {
       updateInputLevel();
+      intervalId = window.setInterval(updateInputLevel, 8); // ~120fps
     }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
   }, [isActive]);
 
   return (
